@@ -13,7 +13,7 @@ from pathlib import Path
 st.set_page_config(
     page_title="DairyGuard AI",
     page_icon="🥛",
-    layout="wide"
+    layout="wide",
 )
 
 
@@ -36,6 +36,23 @@ st.caption(
 
 
 # =========================================================
+# SESSION STATE
+# =========================================================
+
+if "sensor_data" not in st.session_state:
+    st.session_state["sensor_data"] = None
+
+if "analysis_result" not in st.session_state:
+    st.session_state["analysis_result"] = None
+
+if "camera_image_bytes" not in st.session_state:
+    st.session_state["camera_image_bytes"] = None
+
+if "mbrt_results" not in st.session_state:
+    st.session_state["mbrt_results"] = []
+
+
+# =========================================================
 # SIDEBAR
 # =========================================================
 
@@ -46,9 +63,31 @@ page = st.sidebar.radio(
     [
         "Milk Test",
         "Test History",
-        "Farmers"
-    ]
+        "Farmers",
+    ],
 )
+
+
+# =========================================================
+# HELPER: API ERROR
+# =========================================================
+
+def show_api_error(response):
+
+    try:
+
+        detail = response.json().get(
+            "detail",
+            response.text,
+        )
+
+    except Exception:
+
+        detail = response.text
+
+    st.error(
+        f"API Error {response.status_code}: {detail}"
+    )
 
 
 # =========================================================
@@ -61,7 +100,7 @@ if page == "Milk Test":
 
 
     # =====================================================
-    # FARMER AND BATCH DETAILS
+    # FARMER AND BATCH
     # =====================================================
 
     col1, col2 = st.columns(2)
@@ -70,14 +109,14 @@ if page == "Milk Test":
 
         farmer_id = st.text_input(
             "👨‍🌾 Farmer ID",
-            value="F001"
+            value="F001",
         )
 
     with col2:
 
         batch_id = st.text_input(
             "📦 Batch ID",
-            value="B001"
+            value="B001",
         )
 
 
@@ -85,187 +124,146 @@ if page == "Milk Test":
 
 
     # =====================================================
-    # CAMERA SECTION
+    # NORMAL CAMERA
     # =====================================================
 
     st.subheader("📸 Milk Sample Camera")
 
-
-    if st.button("📸 Capture Milk Sample"):
-
-        # Start with capture marked as failed
-        st.session_state["camera_captured"] = False
+    if st.button(
+        "📸 Capture Milk Sample",
+        use_container_width=True,
+    ):
 
         try:
 
             response = requests.get(
                 f"{API_URL}/api/camera/save",
-                timeout=70
+                timeout=70,
             )
-
 
             if response.status_code == 200:
 
-                camera_result = response.json()
+                result = response.json()
 
-                st.session_state[
-                    "camera_captured"
-                ] = True
+                image_path = Path(
+                    result.get(
+                        "image_path",
+                        "",
+                    )
+                )
+
+                if image_path.exists():
+
+                    st.session_state[
+                        "camera_image_bytes"
+                    ] = image_path.read_bytes()
+
+                else:
+
+                    latest_path = Path(
+                        result.get(
+                            "latest_image_path",
+                            "uploads/milk_sample.jpg",
+                        )
+                    )
+
+                    if latest_path.exists():
+
+                        st.session_state[
+                            "camera_image_bytes"
+                        ] = latest_path.read_bytes()
 
                 st.success(
-                    "✅ Milk sample image captured successfully!"
+                    "✅ Fresh milk sample image captured!"
                 )
 
-                st.write(
+                st.caption(
                     f"Image size: "
-                    f"{camera_result.get('image_size', 0)} bytes"
+                    f"{result.get('image_size', 0)} bytes"
                 )
-
 
             else:
 
-                st.error(
-                    f"Camera capture failed: "
-                    f"{response.status_code}"
-                )
-
+                show_api_error(response)
 
         except requests.exceptions.Timeout:
 
-            st.session_state[
-                "camera_captured"
-            ] = False
-
             st.error(
-                "⏱️ Camera request timed out. "
-                "Please try again."
+                "⏱️ Camera request timed out."
             )
 
-
         except requests.exceptions.ConnectionError:
-
-            st.session_state[
-                "camera_captured"
-            ] = False
 
             st.error(
                 "❌ Cannot connect to DairyGuard backend."
             )
 
-
         except Exception as e:
-
-            st.session_state[
-                "camera_captured"
-            ] = False
 
             st.error(
                 f"Camera error: {e}"
             )
 
 
-    # =====================================================
-    # DISPLAY LATEST CAPTURED IMAGE
-    # =====================================================
+    if st.session_state[
+        "camera_image_bytes"
+    ]:
 
-    if st.session_state.get(
-        "camera_captured",
-        False
-    ):
-
-        image_path = Path(
-            "uploads/milk_sample.jpg"
+        st.image(
+            st.session_state[
+                "camera_image_bytes"
+            ],
+            caption="Latest Fresh Milk Sample",
+            width=500,
         )
-
-
-        if image_path.exists():
-
-            try:
-
-                # -------------------------------------------------
-                # READ THE ACTUAL IMAGE BYTES
-                # -------------------------------------------------
-
-                with open(
-                    image_path,
-                    "rb"
-                ) as image_file:
-
-                    image_bytes = image_file.read()
-
-
-                # -------------------------------------------------
-                # DISPLAY IMAGE BYTES
-                # This avoids browser image caching.
-                # -------------------------------------------------
-
-                st.image(
-                    image_bytes,
-                    caption="Latest Captured Milk Sample",
-                    width=500
-                )
-
-
-            except Exception as e:
-
-                st.error(
-                    f"Unable to display captured image: {e}"
-                )
 
 
     st.divider()
 
 
     # =====================================================
-    # SENSOR READING
+    # LIVE SENSOR
     # =====================================================
 
-    st.subheader("🌈 Sensor Reading")
+    st.subheader("🌈 Live Colour Sensor")
 
-
-    if st.button("📡 Read Sensor"):
+    if st.button(
+        "📡 Read Sensor",
+        use_container_width=True,
+    ):
 
         try:
 
             response = requests.get(
                 f"{API_URL}/api/latest-reading",
-                timeout=10
+                timeout=10,
             )
-
 
             if response.status_code == 200:
 
-                sensor_data = response.json()
-
                 st.session_state[
                     "sensor_data"
-                ] = sensor_data
+                ] = response.json()
 
                 st.success(
-                    "Sensor reading received!"
+                    "✅ ESP32 sensor reading received!"
                 )
-
 
             else:
 
-                st.error(
-                    "Unable to read sensor data."
-                )
-
-
-        except requests.exceptions.Timeout:
-
-            st.error(
-                "Sensor request timed out."
-            )
-
+                show_api_error(response)
 
         except requests.exceptions.ConnectionError:
 
             st.error(
-                "Cannot connect to DairyGuard backend."
+                "❌ Cannot connect to DairyGuard backend."
             )
 
+        except requests.exceptions.Timeout:
+
+            st.error(
+                "⏱️ Sensor request timed out."
+            )
 
         except Exception as e:
 
@@ -274,64 +272,41 @@ if page == "Milk Test":
             )
 
 
-    # =====================================================
-    # DISPLAY SENSOR VALUES
-    # =====================================================
-
-    sensor_data = st.session_state.get(
-        "sensor_data",
-        None
-    )
+    sensor_data = st.session_state[
+        "sensor_data"
+    ]
 
 
     if sensor_data:
 
         col1, col2, col3, col4 = st.columns(4)
 
-
         with col1:
 
             st.metric(
                 "🔴 Red",
-                sensor_data.get(
-                    "red",
-                    0
-                )
+                f"{sensor_data.get('red', 0):.0f}",
             )
-
 
         with col2:
 
             st.metric(
                 "🟢 Green",
-                sensor_data.get(
-                    "green",
-                    0
-                )
+                f"{sensor_data.get('green', 0):.0f}",
             )
-
 
         with col3:
 
             st.metric(
                 "🔵 Blue",
-                sensor_data.get(
-                    "blue",
-                    0
-                )
+                f"{sensor_data.get('blue', 0):.0f}",
             )
-
 
         with col4:
 
-            temperature = sensor_data.get(
-                "temperature",
-                0
-            )
-
             st.metric(
                 "🌡️ Temperature",
-                f"{temperature:.1f} °C"
+                f"{sensor_data.get('temperature', 0):.1f} °C",
             )
 
 
@@ -339,44 +314,31 @@ if page == "Milk Test":
 
 
     # =====================================================
-    # ANALYZE CURRENT READING
+    # MILK QUALITY ANALYSIS
     # =====================================================
 
     st.subheader("🔬 Milk Quality Analysis")
 
-
     if st.button(
         "🔍 Analyze Current Reading",
-        type="primary"
+        type="primary",
+        use_container_width=True,
     ):
 
         try:
 
-            # -------------------------------------------------
-            # GET LATEST SENSOR DATA
-            # -------------------------------------------------
-
             response = requests.get(
                 f"{API_URL}/api/latest-reading",
-                timeout=10
+                timeout=10,
             )
-
 
             if response.status_code != 200:
 
-                st.error(
-                    "Unable to retrieve sensor data."
-                )
+                show_api_error(response)
 
                 st.stop()
 
-
             sensor_data = response.json()
-
-
-            # -------------------------------------------------
-            # CREATE REQUEST
-            # -------------------------------------------------
 
             payload = {
 
@@ -389,93 +351,70 @@ if page == "Milk Test":
                 "red":
                     sensor_data.get(
                         "red",
-                        0
+                        0,
                     ),
 
                 "green":
                     sensor_data.get(
                         "green",
-                        0
+                        0,
                     ),
 
                 "blue":
                     sensor_data.get(
                         "blue",
-                        0
+                        0,
                     ),
 
                 "temperature":
                     sensor_data.get(
                         "temperature",
-                        0
-                    )
+                        0,
+                    ),
             }
 
-
-            # -------------------------------------------------
-            # SEND DATA TO FASTAPI
-            # -------------------------------------------------
-
             response = requests.post(
-
                 f"{API_URL}/api/milk-test",
-
                 json=payload,
-
-                timeout=15
+                timeout=15,
             )
-
 
             if response.status_code == 200:
 
-                result = response.json()
-
                 st.session_state[
                     "analysis_result"
-                ] = result
+                ] = response.json()
 
                 st.success(
-                    "Milk analysis completed successfully!"
+                    "✅ Milk analysis completed!"
                 )
-
 
             else:
 
-                st.error(
-                    f"Analysis failed: "
-                    f"{response.text}"
-                )
-
-
-        except requests.exceptions.Timeout:
-
-            st.error(
-                "Analysis request timed out."
-            )
-
+                show_api_error(response)
 
         except requests.exceptions.ConnectionError:
 
             st.error(
-                "Cannot connect to DairyGuard backend."
+                "❌ Cannot connect to DairyGuard backend."
             )
 
+        except requests.exceptions.Timeout:
+
+            st.error(
+                "⏱️ Analysis request timed out."
+            )
 
         except Exception as e:
 
             st.error(
-                f"Error: {e}"
+                f"Analysis error: {e}"
             )
 
 
-    # =====================================================
-    # DISPLAY ANALYSIS RESULT
-    # =====================================================
-
-    result = st.session_state.get(
-        "analysis_result",
-        None
-    )
+    result = st.session_state[
+        "analysis_result"
+    ]
 
 
     if result:
@@ -491,30 +430,25 @@ if page == "Milk Test":
 
         col1, col2, col3, col4 = st.columns(4)
 
-
         with col1:
 
             st.metric(
                 "Quality Score",
-                f"{result.get('quality_score', 0)}/100"
+                f"{result.get('quality_score', 0)}/100",
             )
-
 
         with col2:
 
-            milk_status = result.get(
-                "milk_status",
-                result.get(
-                    "status",
-                    "N/A"
-                )
-            )
-
             st.metric(
                 "Status",
-                milk_status
+                result.get(
+                    "status",
+                    result.get(
+                        "milk_status",
+                        "N/A",
+                    ),
+                ),
             )
-
 
         with col3:
 
@@ -522,66 +456,45 @@ if page == "Milk Test":
                 "Spoilage Risk",
                 result.get(
                     "spoilage_risk",
-                    "N/A"
-                )
+                    "N/A",
+                ),
             )
-
 
         with col4:
 
-            temperature = result.get(
-                "temperature",
-                0
-            )
-
             st.metric(
                 "Temperature",
-                f"{temperature:.1f} °C"
+                f"{result.get('temperature', 0):.1f} °C",
             )
 
 
         # =================================================
-        # RGB VALUES
+        # RGB
         # =================================================
 
-        st.subheader(
-            "🌈 Colour Sensor Values"
-        )
-
+        st.subheader("🌈 Colour Sensor Values")
 
         col1, col2, col3 = st.columns(3)
-
 
         with col1:
 
             st.metric(
                 "Red",
-                result.get(
-                    "red",
-                    0
-                )
+                f"{result.get('red', 0):.0f}",
             )
-
 
         with col2:
 
             st.metric(
                 "Green",
-                result.get(
-                    "green",
-                    0
-                )
+                f"{result.get('green', 0):.0f}",
             )
-
 
         with col3:
 
             st.metric(
                 "Blue",
-                result.get(
-                    "blue",
-                    0
-                )
+                f"{result.get('blue', 0):.0f}",
             )
 
 
@@ -595,53 +508,46 @@ if page == "Milk Test":
             "⏳ AI Shelf-Life Prediction"
         )
 
-
         col1, col2 = st.columns(2)
-
 
         with col1:
 
             shelf_life = result.get(
                 "estimated_shelf_life_hours",
-                "N/A"
+                "N/A",
             )
 
             st.metric(
                 "Estimated Shelf Life",
-                f"{shelf_life} hours"
+                f"{shelf_life} hours",
             )
-
 
         with col2:
 
-            shelf_risk = result.get(
-                "shelf_life_risk",
-                "N/A"
-            )
-
             st.metric(
                 "Shelf-Life Risk",
-                shelf_risk
+                result.get(
+                    "shelf_life_risk",
+                    "N/A",
+                ),
             )
-
-
-        shelf_recommendation = result.get(
-            "shelf_life_recommendation",
-            result.get(
-                "recommendation",
-                "No recommendation available."
-            )
-        )
-
 
         st.info(
-            f"💡 **Shelf-Life Recommendation:** "
-            f"{shelf_recommendation}"
+            "💡 **Shelf-Life Recommendation:** "
+            + str(
+                result.get(
+                    "recommendation",
+                    result.get(
+                        "shelf_life_recommendation",
+                        "No recommendation available.",
+                    ),
+                )
+            )
         )
 
 
         # =================================================
-        # SMART MILK ROUTING
+        # ROUTING
         # =================================================
 
         st.divider()
@@ -650,52 +556,41 @@ if page == "Milk Test":
             "🚚 Smart Milk Routing"
         )
 
-
-        routing = result.get(
-            "milk_routing",
-            "NOT AVAILABLE"
-        )
-
-
-        routing_priority = result.get(
-            "routing_priority",
-            "UNKNOWN"
-        )
-
-
-        routing_reason = result.get(
-            "routing_reason",
-            "No routing recommendation available."
-        )
-
-
         col1, col2 = st.columns(2)
-
 
         with col1:
 
             st.metric(
                 "Recommended Route",
-                routing
+                result.get(
+                    "milk_routing",
+                    "NOT AVAILABLE",
+                ),
             )
-
 
         with col2:
 
             st.metric(
                 "Priority",
-                routing_priority
+                result.get(
+                    "routing_priority",
+                    "UNKNOWN",
+                ),
             )
 
-
         st.info(
-            f"📌 **Routing Reason:** "
-            f"{routing_reason}"
+            "📌 **Routing Reason:** "
+            + str(
+                result.get(
+                    "routing_reason",
+                    "No routing recommendation available.",
+                )
+            )
         )
 
 
         # =================================================
-        # AI RECOMMENDATIONS
+        # AI RECOMMENDATION
         # =================================================
 
         st.divider()
@@ -704,40 +599,34 @@ if page == "Milk Test":
             "🤖 AI Recommendations"
         )
 
-
-        ai_recommendation = result.get(
-            "ai_recommendation",
-            "No AI recommendation available."
-        )
-
-
-        recommended_action = result.get(
-            "recommended_action",
-            "No recommended action available."
-        )
-
-
-        recommendation_count = result.get(
-            "recommendation_count",
-            0
-        )
-
-
         st.info(
-            f"💡 **AI Recommendation:** "
-            f"{ai_recommendation}"
+            "💡 **AI Recommendation:** "
+            + str(
+                result.get(
+                    "ai_recommendation",
+                    "No AI recommendation available.",
+                )
+            )
         )
-
 
         st.success(
-            f"🎯 **Recommended Action:** "
-            f"{recommended_action}"
+            "🎯 **Recommended Action:** "
+            + str(
+                result.get(
+                    "recommended_action",
+                    "No recommended action available.",
+                )
+            )
         )
 
-
         st.caption(
-            f"📊 Recommendations generated: "
-            f"{recommendation_count}"
+            "📊 Recommendations generated: "
+            + str(
+                result.get(
+                    "recommendation_count",
+                    0,
+                )
+            )
         )
 
 
@@ -747,9 +636,9 @@ if page == "Milk Test":
 
         st.divider()
 
-
         if st.button(
-            "💾 Save Test to Database"
+            "💾 Save Test to Database",
+            use_container_width=True,
         ):
 
             try:
@@ -765,38 +654,51 @@ if page == "Milk Test":
                     "red":
                         result.get(
                             "red",
-                            0
+                            0,
                         ),
 
                     "green":
                         result.get(
                             "green",
-                            0
+                            0,
                         ),
 
                     "blue":
                         result.get(
                             "blue",
-                            0
+                            0,
                         ),
 
                     "temperature":
                         result.get(
                             "temperature",
-                            0
-                        )
+                            0,
+                        ),
+
+                    "quality_score":
+                        result.get(
+                            "quality_score"
+                        ),
+
+                    "status":
+                        result.get(
+                            "status",
+                            result.get(
+                                "milk_status"
+                            ),
+                        ),
+
+                    "spoilage_risk":
+                        result.get(
+                            "spoilage_risk"
+                        ),
                 }
 
-
                 save_response = requests.post(
-
                     f"{API_URL}/api/save-test",
-
                     json=save_payload,
-
-                    timeout=15
+                    timeout=15,
                 )
-
 
                 if save_response.status_code == 200:
 
@@ -804,28 +706,11 @@ if page == "Milk Test":
                         "✅ Milk test saved successfully!"
                     )
 
-
                 else:
 
-                    st.error(
-                        f"Failed to save test: "
-                        f"{save_response.text}"
+                    show_api_error(
+                        save_response
                     )
-
-
-            except requests.exceptions.Timeout:
-
-                st.error(
-                    "Save request timed out."
-                )
-
-
-            except requests.exceptions.ConnectionError:
-
-                st.error(
-                    "Cannot connect to DairyGuard backend."
-                )
-
 
             except Exception as e:
 
@@ -834,8 +719,423 @@ if page == "Milk Test":
                 )
 
 
+    # =====================================================
+    # MBRT MONITORING
+    # =====================================================
+
+    st.divider()
+
+    st.header(
+        "🧪 MBRT Microbial-Quality Monitoring"
+    )
+
+    st.info(
+        "Place the milk + MBRT working solution inside "
+        "the closed chamber. Press Start MBRT to begin "
+        "fresh image monitoring."
+    )
+
+
+    # =====================================================
+    # START / STOP
+    # =====================================================
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        if st.button(
+            "▶️ Start MBRT",
+            use_container_width=True,
+        ):
+
+            try:
+
+                response = requests.post(
+                    f"{API_URL}/api/mbrt/start",
+                    json={
+                        "farmer_id": farmer_id,
+                        "batch_id": batch_id,
+                    },
+                    timeout=10,
+                )
+
+                if response.status_code == 200:
+
+                    data = response.json()
+
+                    st.success(
+                        "✅ MBRT monitoring started!"
+                    )
+
+                    st.caption(
+                        f"Fresh image interval: "
+                        f"{data.get('interval_seconds', 30)} seconds"
+                    )
+
+                else:
+
+                    show_api_error(response)
+
+            except Exception as e:
+
+                st.error(
+                    f"MBRT start error: {e}"
+                )
+
+
+    with col2:
+
+        if st.button(
+            "⏹️ Stop MBRT",
+            use_container_width=True,
+        ):
+
+            try:
+
+                response = requests.post(
+                    f"{API_URL}/api/mbrt/stop",
+                    timeout=10,
+                )
+
+                if response.status_code == 200:
+
+                    st.success(
+                        "🛑 MBRT monitoring stopped."
+                    )
+
+                else:
+
+                    show_api_error(response)
+
+            except Exception as e:
+
+                st.error(
+                    f"MBRT stop error: {e}"
+                )
+
+
+    # =====================================================
+    # MBRT STATUS
+    # =====================================================
+
+    try:
+
+        status_response = requests.get(
+            f"{API_URL}/api/mbrt/status",
+            timeout=5,
+        )
+
+        if status_response.status_code == 200:
+
+            mbrt = status_response.json()
+
+            if mbrt.get("running"):
+
+                st.success(
+                    "🟢 MBRT monitoring is running"
+                )
+
+            else:
+
+                st.warning(
+                    "⚪ MBRT monitoring is stopped"
+                )
+
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+
+                st.metric(
+                    "Elapsed Time",
+                    f"{mbrt.get('elapsed_minutes', 0):.2f} min",
+                )
+
+            with col2:
+
+                st.metric(
+                    "Fresh Images",
+                    mbrt.get(
+                        "images_captured",
+                        0,
+                    ),
+                )
+
+            with col3:
+
+                latest = mbrt.get(
+                    "latest"
+                )
+
+                if latest:
+
+                    st.metric(
+                        "Latest Reading",
+                        f"{latest.get('elapsed_minutes', 0):.2f} min",
+                    )
+
+                else:
+
+                    st.metric(
+                        "Latest Reading",
+                        "Waiting",
+                    )
+
+
+            # =================================================
+            # LATEST MBRT IMAGE
+            # =================================================
+
+            latest = mbrt.get(
+                "latest"
+            )
+
+            if latest:
+
+                image_path = Path(
+                    latest.get(
+                        "image_path",
+                        "",
+                    )
+                )
+
+                if image_path.exists():
+
+                    image_bytes = (
+                        image_path.read_bytes()
+                    )
+
+                    st.image(
+                        image_bytes,
+                        caption=(
+                            "Latest Fresh MBRT Image — "
+                            f"{latest.get('elapsed_minutes', 0):.2f} min"
+                        ),
+                        width=500,
+                    )
+
+
+                # =============================================
+                # COLOUR ANALYSIS
+                # =============================================
+
+                colour = latest.get(
+                    "colour"
+                )
+
+                if colour:
+
+                    st.subheader(
+                        "🎨 MBRT Camera Colour Analysis"
+                    )
+
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+
+                        st.metric(
+                            "Red",
+                            f"{colour.get('red', 0):.2f}",
+                        )
+
+                    with col2:
+
+                        st.metric(
+                            "Green",
+                            f"{colour.get('green', 0):.2f}",
+                        )
+
+                    with col3:
+
+                        st.metric(
+                            "Blue",
+                            f"{colour.get('blue', 0):.2f}",
+                        )
+
+                    with col4:
+
+                        st.metric(
+                            "Blue Score",
+                            f"{colour.get('blue_score', 0):.2f}",
+                        )
+
+
+                    # =========================================
+                    # MICROBIAL ACTIVITY ESTIMATE
+                    # =========================================
+
+                    mbrt_data = latest.get(
+                        "mbrt"
+                    )
+
+                    if mbrt_data:
+
+                        st.subheader(
+                            "🧫 Microbial Activity Estimate"
+                        )
+
+                        col1, col2, col3 = st.columns(3)
+
+                        with col1:
+
+                            st.metric(
+                                "Microbial Activity",
+                                mbrt_data.get(
+                                    "microbial_activity",
+                                    "NOT AVAILABLE"
+                                )
+                            )
+
+                        with col2:
+
+                            st.metric(
+                                "MBRT Status",
+                                mbrt_data.get(
+                                    "mbrt_status",
+                                    "MONITORING"
+                                )
+                            )
+
+                        with col3:
+
+                            st.metric(
+                                "Microbial Count",
+                                mbrt_data.get(
+                                    "microbial_count",
+                                    "NOT CALIBRATED"
+                                )
+                            )
+
+                        st.info(
+                            "🧪 **Basis:** "
+                            + str(
+                                mbrt_data.get(
+                                    "basis",
+                                    "MBRT colour-change behaviour"
+                                )
+                            )
+                        )
+
+
+
+            # =================================================
+            # MBRT TIMELINE
+            # =================================================
+
+            results = mbrt.get(
+                "results",
+                [],
+            )
+
+            if results:
+
+                rows = []
+
+                for item in results:
+
+                    colour = (
+                        item.get(
+                            "colour"
+                        )
+                        or {}
+                    )
+
+                    rows.append({
+
+                        "Time (min)":
+                            item.get(
+                                "elapsed_minutes",
+                                0,
+                            ),
+
+                        "Red":
+                            colour.get(
+                                "red",
+                                0,
+                            ),
+
+                        "Green":
+                            colour.get(
+                                "green",
+                                0,
+                            ),
+
+                        "Blue":
+                            colour.get(
+                                "blue",
+                                0,
+                            ),
+
+                        "Blue Score":
+                            colour.get(
+                                "blue_score",
+                                0,
+                            ),
+
+                        "Microbial Activity":
+                            (
+                                item.get(
+                                    "mbrt"
+                                ) or {}
+                            ).get(
+                                "microbial_activity",
+                                "N/A"
+                            ),
+
+                    })
+
+
+                if rows:
+
+                    st.subheader(
+                        "📈 MBRT Monitoring Timeline"
+                    )
+
+                    df_mbrt = pd.DataFrame(
+                        rows
+                    )
+
+                    st.dataframe(
+                        df_mbrt,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.line_chart(
+                        df_mbrt.set_index(
+                            "Time (min)"
+                        )[
+                            [
+                                "Red",
+                                "Green",
+                                "Blue",
+                            ]
+                        ]
+                    )
+
+
+    except requests.exceptions.ConnectionError:
+
+        st.warning(
+            "MBRT status unavailable: backend is not connected."
+        )
+
+    except Exception as e:
+
+        st.warning(
+            f"MBRT status error: {e}"
+        )
+
+
+    # =====================================================
+    # MBRT NOTE
+    # =====================================================
+
+
+
 # =========================================================
-# TEST HISTORY PAGE
+# TEST HISTORY
 # =========================================================
 
 elif page == "Test History":
@@ -844,9 +1144,9 @@ elif page == "Test History":
         "📋 Milk Test History"
     )
 
-
     if st.button(
-        "🔄 Refresh History"
+        "🔄 Refresh History",
+        use_container_width=True,
     ):
 
         st.rerun()
@@ -856,14 +1156,12 @@ elif page == "Test History":
 
         response = requests.get(
             f"{API_URL}/api/tests",
-            timeout=10
+            timeout=10,
         )
-
 
         if response.status_code == 200:
 
             tests = response.json()
-
 
             if tests:
 
@@ -871,13 +1169,11 @@ elif page == "Test History":
                     tests
                 )
 
-
                 st.dataframe(
                     df,
                     use_container_width=True,
-                    hide_index=True
+                    hide_index=True,
                 )
-
 
             else:
 
@@ -885,37 +1181,19 @@ elif page == "Test History":
                     "No milk tests found."
                 )
 
-
         else:
 
-            st.error(
-                "Unable to retrieve test history."
-            )
-
-
-    except requests.exceptions.Timeout:
-
-        st.error(
-            "History request timed out."
-        )
-
-
-    except requests.exceptions.ConnectionError:
-
-        st.error(
-            "Cannot connect to DairyGuard backend."
-        )
-
+            show_api_error(response)
 
     except Exception as e:
 
         st.error(
-            f"Error: {e}"
+            f"History error: {e}"
         )
 
 
 # =========================================================
-# FARMERS PAGE
+# FARMERS
 # =========================================================
 
 elif page == "Farmers":
@@ -924,84 +1202,69 @@ elif page == "Farmers":
         "👨‍🌾 Farmer Records"
     )
 
-
     try:
 
         response = requests.get(
             f"{API_URL}/api/farmers",
-            timeout=10
+            timeout=10,
         )
-
 
         if response.status_code == 200:
 
             farmers = response.json()
 
-
             if farmers:
 
-                st.subheader(
-                    "Registered Farmers"
-                )
+                all_tests = []
+
+                try:
+
+                    history_response = requests.get(
+                        f"{API_URL}/api/tests",
+                        timeout=10,
+                    )
+
+                    if history_response.status_code == 200:
+
+                        all_tests = (
+                            history_response.json()
+                        )
+
+                except Exception:
+
+                    all_tests = []
 
 
                 for farmer in farmers:
 
-                    farmer_id = farmer.get(
+                    farmer_id_value = farmer.get(
                         "farmer_id",
-                        "N/A"
+                        "N/A",
                     )
 
+                    farmer_tests = [
+
+                        test
+
+                        for test in all_tests
+
+                        if test.get(
+                            "farmer_id"
+                        )
+                        == farmer_id_value
+
+                    ]
 
                     st.write(
-                        f"👨‍🌾 **{farmer_id}**"
+                        f"👨‍🌾 **{farmer_id_value}**"
                     )
 
+                    st.caption(
+                        f"Tests recorded: "
+                        f"{len(farmer_tests)}"
+                    )
 
-                    try:
-
-                        history_response = requests.get(
-
-                            f"{API_URL}/api/tests",
-
-                            timeout=10
-                        )
-
-
-                        if (
-                            history_response.status_code
-                            == 200
-                        ):
-
-                            all_tests = (
-                                history_response.json()
-                            )
-
-
-                            farmer_tests = [
-
-                                test
-
-                                for test
-                                in all_tests
-
-                                if test.get(
-                                    "farmer_id"
-                                ) == farmer_id
-
-                            ]
-
-
-                            st.caption(
-                                f"Tests recorded: "
-                                f"{len(farmer_tests)}"
-                            )
-
-
-                    except Exception:
-
-                        pass
-
+                    st.divider()
 
             else:
 
@@ -1009,32 +1272,14 @@ elif page == "Farmers":
                     "No farmers found."
                 )
 
-
         else:
 
-            st.error(
-                "Unable to retrieve farmers."
-            )
-
-
-    except requests.exceptions.Timeout:
-
-        st.error(
-            "Farmer request timed out."
-        )
-
-
-    except requests.exceptions.ConnectionError:
-
-        st.error(
-            "Cannot connect to DairyGuard backend."
-        )
-
+            show_api_error(response)
 
     except Exception as e:
 
         st.error(
-            f"Error: {e}"
+            f"Farmer error: {e}"
         )
 
 
@@ -1048,41 +1293,36 @@ st.sidebar.subheader(
     "📱 Digital Dairy Passport"
 )
 
-
 qr_batch_id = st.sidebar.text_input(
     "Enter Batch ID",
-    value="B001"
+    value="B001",
 )
 
 
 if st.sidebar.button(
-    "Generate QR"
+    "Generate QR",
 ):
 
     try:
 
         response = requests.get(
-
             f"{API_URL}/api/tests/{qr_batch_id}",
-
-            timeout=10
+            timeout=10,
         )
-
 
         if response.status_code == 200:
 
             batch_tests = response.json()
 
-
             if batch_tests:
 
-                latest = batch_tests[0]
+                latest = batch_tests[-1]
 
-
-                # -------------------------------------------------
-                # DIGITAL DAIRY PASSPORT
-                # Adulteration removed
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Adulteration is intentionally excluded.
+                # Current hardware does not perform an
+                # adulteration test.
+                # -----------------------------------------
 
                 passport_data = f"""
 DairyGuard AI - Digital Dairy Passport
@@ -1104,35 +1344,46 @@ Temperature:
 
 Spoilage Risk:
 {latest.get('spoilage_risk', 'N/A')}
-"""
 
+MBRT Prototype Status:
+{latest.get('mbrt_status', 'N/A')}
+
+MBRT Time:
+{latest.get('mbrt_time_seconds', 'N/A')} seconds
+
+MBRT Blue Score:
+{latest.get('mbrt_blue_score', 'N/A')}
+"""
 
                 qr = qrcode.make(
                     passport_data
                 )
 
+                Path(
+                    "uploads"
+                ).mkdir(
+                    exist_ok=True
+                )
 
                 qr_path = (
                     Path("uploads")
                     / f"QR_{qr_batch_id}.png"
                 )
 
-
                 qr.save(
                     qr_path
                 )
-
 
                 st.sidebar.success(
                     "QR generated successfully!"
                 )
 
-
                 st.sidebar.image(
                     str(qr_path),
-                    caption=f"Batch {qr_batch_id}"
+                    caption=(
+                        f"Batch {qr_batch_id}"
+                    ),
                 )
-
 
             else:
 
@@ -1140,27 +1391,11 @@ Spoilage Risk:
                     "No test data found for this batch."
                 )
 
-
         else:
 
-            st.sidebar.error(
-                "Unable to retrieve batch data."
+            show_api_error(
+                response
             )
-
-
-    except requests.exceptions.Timeout:
-
-        st.sidebar.error(
-            "QR request timed out."
-        )
-
-
-    except requests.exceptions.ConnectionError:
-
-        st.sidebar.error(
-            "Cannot connect to DairyGuard backend."
-        )
-
 
     except Exception as e:
 

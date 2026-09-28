@@ -1,12 +1,3 @@
-# =========================================================
-# DAIRYGUARD AI - PROTOTYPE MODELS
-# =========================================================
-
-
-# =========================================================
-# SHELF-LIFE PREDICTION
-# =========================================================
-
 def predict_shelf_life(
     temperature,
     red,
@@ -14,130 +5,70 @@ def predict_shelf_life(
     blue,
     quality_score
 ):
-    """
-    Prototype shelf-life prediction.
 
-    This is a demonstration model and is NOT
-    scientifically validated for commercial
-    expiry-date determination.
-    """
+    rgb_average = (red + green + blue) / 3
 
-    rgb_average = (
-        red + green + blue
-    ) / 3
+    shelf_life = 24
 
-
-    # Base prototype shelf life
-    shelf_life = 24.0
-
-
-    # Temperature effect
     if temperature <= 4:
-
         shelf_life += 8
-
     elif temperature <= 8:
-
         shelf_life += 4
-
     elif temperature <= 12:
-
         shelf_life -= 2
-
     elif temperature <= 20:
-
         shelf_life -= 6
-
     else:
-
         shelf_life -= 10
 
-
-    # Quality effect
     if quality_score >= 80:
-
         shelf_life += 6
-
     elif quality_score >= 60:
-
         shelf_life += 2
-
     else:
-
         shelf_life -= 6
 
-
-    # Colour indication
     if rgb_average >= 150:
-
         shelf_life += 2
-
     elif rgb_average < 80:
-
         shelf_life -= 4
 
-
-    # Keep within prototype range
     shelf_life = max(
         2,
-        min(shelf_life, 48)
+        min(48, shelf_life)
     )
 
-
-    # Shelf-life risk
     if shelf_life >= 30:
-
         risk = "LOW"
-
     elif shelf_life >= 15:
-
         risk = "MEDIUM"
-
     else:
-
         risk = "HIGH"
 
-
-    # Basic recommendation
     if risk == "LOW":
-
         recommendation = (
-            "Milk appears suitable for normal "
-            "processing and storage."
+            "Milk is currently in a lower prototype "
+            "spoilage-risk range. Continue proper cold-chain "
+            "handling and routine monitoring."
         )
-
     elif risk == "MEDIUM":
-
         recommendation = (
-            "Prioritize this batch for processing "
-            "and maintain proper cold-chain conditions."
+            "Milk should be monitored closely and processed "
+            "with priority while maintaining temperature control."
         )
-
     else:
-
         recommendation = (
-            "Prioritize this batch immediately "
-            "and verify milk quality using the "
-            "appropriate laboratory test."
+            "Milk requires additional quality verification "
+            "and priority handling."
         )
-
 
     return {
-
-        "estimated_shelf_life_hours":
-            round(shelf_life, 1),
-
-        "shelf_life_risk":
-            risk,
-
-        "recommendation":
-            recommendation
+        "estimated_shelf_life_hours": shelf_life,
+        "shelf_life_risk": risk,
+        "recommendation": recommendation,
+        "shelf_life_recommendation": recommendation
     }
 
-
-# =========================================================
-# SMART MILK ROUTING
-# =========================================================
 
 def recommend_milk_routing(
     quality_score,
@@ -145,234 +76,244 @@ def recommend_milk_routing(
     temperature
 ):
 
-    if (
-        quality_score >= 80
-        and spoilage_risk == "LOW"
-    ):
+    if quality_score >= 80 and spoilage_risk == "LOW":
 
-        return {
+        route = "NORMAL PROCESSING"
+        priority = "LOW"
 
-            "route":
-                "NORMAL PROCESSING",
-
-            "priority":
-                "LOW",
-
-            "reason":
-                "Batch shows good prototype "
-                "quality indicators."
-        }
-
+        reason = (
+            "Prototype quality indicators are within the "
+            "normal processing range."
+        )
 
     elif (
         quality_score >= 60
-        and spoilage_risk in [
-            "LOW",
-            "MEDIUM"
-        ]
+        and spoilage_risk in ["LOW", "MEDIUM"]
     ):
 
-        return {
+        route = "PRIORITY PROCESSING"
+        priority = "MEDIUM"
 
-            "route":
-                "PRIORITY PROCESSING",
-
-            "priority":
-                "MEDIUM",
-
-            "reason":
-                "Process this batch before "
-                "lower-priority batches."
-        }
-
+        reason = (
+            "Milk should receive closer monitoring and "
+            "priority processing."
+        )
 
     else:
 
-        return {
+        route = "QUALITY VERIFICATION"
+        priority = "HIGH"
 
-            "route":
-                "QUALITY VERIFICATION",
-
-            "priority":
-                "HIGH",
-
-            "reason":
-                "Batch requires additional "
-                "quality verification before routing."
-        }
-
-
-# =========================================================
-# AI RECOMMENDATIONS
-# =========================================================
-
-def generate_ai_recommendation(
-    temperature,
-    quality_score,
-    spoilage_risk,
-    shelf_life_hours,
-    routing_priority
-):
-    """
-    Prototype recommendation engine.
-
-    This uses rule-based logic for the prototype.
-    It is not a clinically or commercially validated
-    AI decision system.
-    """
-
-
-    recommendations = []
-
-
-    # -----------------------------------------------------
-    # Temperature
-    # -----------------------------------------------------
+        reason = (
+            "Milk requires additional quality verification "
+            "before normal processing."
+        )
 
     if temperature > 20:
 
-        recommendations.append(
-            "Temperature is high. "
-            "Move the batch to appropriate "
-            "cold-chain storage and verify "
-            "the milk condition."
+        route = "QUALITY VERIFICATION"
+        priority = "HIGH"
+
+        reason = (
+            "Temperature is high in the prototype monitoring "
+            "logic. Verify cold-chain conditions before processing."
         )
 
+    return {
+        "milk_routing": route,
+        "routing_priority": priority,
+        "routing_reason": reason
+    }
+
+
+def generate_ai_recommendation(
+    quality_score,
+    spoilage_risk,
+    temperature,
+    red,
+    green,
+    blue
+):
+
+    recommendations = []
+
+    rgb_average = (
+        red + green + blue
+    ) / 3
+
+    if temperature > 20:
+        recommendations.append(
+            "Temperature is high. Check cold-chain conditions."
+        )
     elif temperature > 8:
-
         recommendations.append(
-            "Maintain stronger temperature "
-            "control and prioritize monitoring."
+            "Maintain stronger temperature control."
         )
-
     else:
-
         recommendations.append(
-            "Temperature is within the "
-            "prototype monitoring range."
+            "Temperature is within the prototype monitoring range."
         )
-
-
-    # -----------------------------------------------------
-    # Quality score
-    # -----------------------------------------------------
 
     if quality_score >= 80:
-
         recommendations.append(
-            "Prototype quality indicators are good."
+            "Prototype quality score is in the higher range."
         )
-
     elif quality_score >= 60:
-
         recommendations.append(
-            "Quality indicators require "
-            "closer monitoring."
+            "Monitor the milk quality more closely."
         )
-
     else:
-
         recommendations.append(
-            "Perform additional milk-quality "
-            "verification before normal processing."
+            "Additional quality verification is recommended."
         )
 
+    if spoilage_risk == "HIGH":
+        recommendations.append(
+            "High prototype spoilage risk detected. "
+            "Perform additional verification."
+        )
+    elif spoilage_risk == "MEDIUM":
+        recommendations.append(
+            "Medium prototype spoilage risk. "
+            "Prioritize processing."
+        )
+    else:
+        recommendations.append(
+            "Prototype spoilage risk is currently low."
+        )
 
-    # -----------------------------------------------------
-    # Spoilage risk
-    # -----------------------------------------------------
+    if rgb_average >= 150:
+        recommendations.append(
+            "Colour sensor reading is in the prototype higher range."
+        )
+    elif rgb_average >= 80:
+        recommendations.append(
+            "Colour reading should be monitored."
+        )
+    else:
+        recommendations.append(
+            "Colour reading requires additional verification."
+        )
 
     if spoilage_risk == "HIGH":
 
-        recommendations.append(
-            "High spoilage risk: prioritize "
-            "additional quality verification."
+        recommended_action = (
+            "Perform quality verification before processing."
         )
 
-    elif spoilage_risk == "MEDIUM":
+    elif temperature > 20:
 
-        recommendations.append(
-            "Medium spoilage risk: prioritize "
-            "the batch for processing."
+        recommended_action = (
+            "Improve cold-chain conditions and prioritize processing."
         )
 
-    else:
+    elif quality_score >= 80:
 
-        recommendations.append(
-            "Low prototype spoilage risk."
-        )
-
-
-    # -----------------------------------------------------
-    # Shelf life
-    # -----------------------------------------------------
-
-    if shelf_life_hours < 12:
-
-        recommendations.append(
-            "Estimated remaining shelf life is short. "
-            "Prioritize this batch."
-        )
-
-    elif shelf_life_hours < 24:
-
-        recommendations.append(
-            "Estimated shelf life is limited. "
-            "Avoid unnecessary storage delays."
+        recommended_action = (
+            "Proceed with normal prototype processing workflow."
         )
 
     else:
 
-        recommendations.append(
-            "Estimated shelf life is relatively longer "
-            "under the current prototype model."
+        recommended_action = (
+            "Prioritize processing and continue monitoring."
         )
 
+    if spoilage_risk == "HIGH":
 
-    # -----------------------------------------------------
-    # Routing priority
-    # -----------------------------------------------------
-
-    if routing_priority == "HIGH":
-
-        action = (
-            "Recommended action: "
-            "send the batch for quality verification."
+        ai_recommendation = (
+            "Additional quality verification is recommended "
+            "because the prototype indicates higher spoilage risk."
         )
 
-    elif routing_priority == "MEDIUM":
+    elif temperature > 20:
 
-        action = (
-            "Recommended action: "
-            "prioritize the batch for processing."
+        ai_recommendation = (
+            "Temperature control should be improved before "
+            "continuing normal processing."
+        )
+
+    elif quality_score >= 80:
+
+        ai_recommendation = (
+            "Milk is currently within the higher prototype "
+            "quality range."
         )
 
     else:
 
-        action = (
-            "Recommended action: "
-            "continue normal processing while "
-            "maintaining proper storage conditions."
+        ai_recommendation = (
+            "Continue monitoring milk quality and process "
+            "the batch with appropriate priority."
         )
-
-
-    # -----------------------------------------------------
-    # Final recommendation
-    # -----------------------------------------------------
-
-    final_recommendation = " ".join(
-        recommendations
-    )
-
 
     return {
+        "recommendation": ai_recommendation,
+        "ai_recommendation": ai_recommendation,
+        "recommended_action": recommended_action,
+        "recommendation_count": len(recommendations),
+        "recommendations": recommendations
+    }
 
-        "recommendation":
-            final_recommendation,
 
-        "recommended_action":
-            action,
+def analyze_mbrt_result(
+    elapsed_seconds,
+    blue_score,
+    initial_blue_score=None
+):
+    """
+    Prototype microbial-activity estimate based on MBRT
+    camera colour behaviour.
 
-        "number_of_recommendations":
-            len(recommendations)
+    IMPORTANT:
+    This is NOT a validated CFU/mL measurement.
+    Laboratory calibration is required for microbial counts.
+    """
+
+    if elapsed_seconds is None:
+        return {
+            "mbrt_status": "NOT AVAILABLE",
+            "microbial_activity": "NOT AVAILABLE",
+            "microbial_count": "NOT CALIBRATED",
+            "basis": "No MBRT observation available"
+        }
+
+    # -----------------------------------------------------
+    # Prototype activity classification
+    # -----------------------------------------------------
+    #
+    # These categories are only for prototype demonstration.
+    # They must not be interpreted as laboratory microbial
+    # counts.
+    #
+
+    if elapsed_seconds >= 30 * 60:
+
+        activity = "LOW"
+
+    elif elapsed_seconds >= 15 * 60:
+
+        activity = "MODERATE"
+
+    else:
+
+        activity = "HIGH"
+
+    return {
+        "mbrt_status": "MONITORING",
+
+        "microbial_activity":
+            activity,
+
+        "microbial_count":
+            "NOT CALIBRATED",
+
+        "basis":
+            "MBRT colour-change behaviour",
+
+        "mbrt_time_seconds":
+            elapsed_seconds,
+
+        "mbrt_blue_score":
+            blue_score
     }
