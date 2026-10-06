@@ -42,8 +42,7 @@ app = FastAPI(
 # =========================================================
 # CONFIGURATION
 # =========================================================
-
-CAMERA_URL = "http://10.88.17.1/capture"
+CAMERA_URL = "http://10.225.147.1/capture"
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(
